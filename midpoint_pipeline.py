@@ -191,8 +191,8 @@ plt.show()
 
 
 # Minimal MLflow logging
-EXAMPLE_X = X_tr.head(5).astype("float64")  # FIX: small float sample for signature inference
-mlflow.set_experiment("wine-quality-midpoint")
+EXAMPLE_X = X_tr.head(5).astype("float64")
+mlflow.set_experiment("midpoint_pipeline")
 
 common = {
     "seed": 42,
