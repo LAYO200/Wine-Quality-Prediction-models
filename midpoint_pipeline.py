@@ -28,9 +28,8 @@ from sklearn.metrics import (
 import mlflow
 import mlflow.sklearn
 
-# -----------------------------
+
 # Load data
-# -----------------------------
 np.random.seed(42)
 
 red_df = pd.read_csv("data/wine+quality/winequality-red.csv", sep=";")
@@ -57,9 +56,7 @@ X = df[features].astype("float64")  # FIX: use floats so MLflow schema is stable
 y_cls = df["target_cls"].values
 y_reg = df["quality"].values
 
-# -----------------------------
 # Split: train / val / test
-# -----------------------------
 X_tr, X_te, y_cls_tr, y_cls_te, y_reg_tr, y_reg_te = train_test_split(
     X, y_cls, y_reg, test_size=0.20, random_state=42, stratify=y_cls
 )
@@ -71,9 +68,8 @@ X_tr, X_va, y_cls_tr, y_cls_va, y_reg_tr, y_reg_va = train_test_split(
 # scaler in a simple ColumnTransformer
 scaler = ColumnTransformer([("scale", StandardScaler(), features)], remainder="drop")
 
-# -----------------------------
 # Plot 1: target distribution
-# -----------------------------
+
 plt.figure()
 pd.Series(y_cls).value_counts().sort_index().plot(kind="bar")
 plt.title("Plot 1 — Target Distribution (0=Low, 1=High)")
@@ -83,9 +79,9 @@ plt.tight_layout()
 plt.savefig("plot1_target_distribution.png", dpi=200, bbox_inches="tight")
 plt.show()
 
-# -----------------------------
-# Plot 2: correlation matrix (class-style)
-# -----------------------------
+
+# Plot 2: correlation matrix
+
 num_df = df[features + ["quality"]].select_dtypes(include=[np.number])
 corr = num_df.corr(numeric_only=True)
 
@@ -98,9 +94,8 @@ plt.tight_layout()
 plt.savefig("plot2_correlation_matrix.png")
 plt.show()
 
-# -----------------------------
-# Baselines (no tuning)
-# -----------------------------
+
+# Baselines
 # classification
 logit = Pipeline([("prep", scaler), ("clf", LogisticRegression(max_iter=200, random_state=42))])
 logit.fit(X_tr, y_cls_tr)
@@ -115,9 +110,8 @@ linreg.fit(X_tr, y_reg_tr)
 tree_reg = Pipeline([("prep", "passthrough"), ("reg", DecisionTreeRegressor(random_state=42))])
 tree_reg.fit(X_tr, y_reg_tr)
 
-# -----------------------------
+
 # Tables: metrics on val + test
-# -----------------------------
 def cls_eval(model, Xv, yv, Xte, yte):
     pv = model.predict(Xv)
     pt = model.predict(Xte)
@@ -162,9 +156,8 @@ print(table_reg.to_string(index=False))
 table_cls.to_csv("table1_classification_metrics.csv", index=False)
 table_reg.to_csv("table2_regression_metrics.csv", index=False)
 
-# -----------------------------
-# Plot 3: confusion matrix (class-style, no colorbar)
-# -----------------------------
+
+# Plot 3: confusion matrix
 best_cls_model = logit if m_logit["val_f1"] >= m_treec["val_f1"] else tree_cls
 best_cls_name = "LogisticRegression" if best_cls_model is logit else "DecisionTreeClassifier"
 
@@ -178,9 +171,8 @@ plt.tight_layout()
 plt.savefig("plot3_confusion_matrix.png")
 plt.show()
 
-# -----------------------------
-# Plot 4: residuals vs predicted (best reg by Val RMSE)
-# -----------------------------
+
+# Plot 4: residuals vs predicted
 best_reg_model = linreg if m_linr["val_rmse"] <= m_treer["val_rmse"] else tree_reg
 best_reg_name = "LinearRegression" if best_reg_model is linreg else "DecisionTreeRegressor"
 
@@ -197,9 +189,8 @@ plt.tight_layout()
 plt.savefig("plot4_residuals.png", dpi=200, bbox_inches="tight")
 plt.show()
 
-# -----------------------------
-# Minimal MLflow logging (one run per baseline)
-# -----------------------------
+
+# Minimal MLflow logging
 EXAMPLE_X = X_tr.head(5).astype("float64")  # FIX: small float sample for signature inference
 mlflow.set_experiment("wine-quality-midpoint")
 
