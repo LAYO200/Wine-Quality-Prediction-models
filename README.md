@@ -62,4 +62,4 @@ Section 8.0: References
 
 •	UCI Machine Learning Repository. (2009). Wine Quality Data Set. University of California, Irvine. http://archive.ics.uci.edu/ml/datasets/Wine+Quality
 
-•	GitHub Repository: 
+•	GitHub Repository: https://github.com/LAYO200/Wine-Quality-Prediction-models.git
