@@ -1,9 +1,12 @@
-#%% md
-# Midpoint — Wine Quality (interactive version)
-# Shows 4 plots with plt.show(), prints 2 tables to console.
+"""
+Wine Quality — Midpoint
+Tasks: (1) Classification: high quality (>=7) vs low; (2) Regression: predict quality (3–9).
+Rationale: UCI wine (red+white) supports both targets from the same features.
+Split: stratified on classification label, 60/20/20 (train/val/test), seed=42 for reproducibility.
+Model selection: choose best CLS by val F1 (imbalance); best REG by val RMSE.
+Tracking: MLflow logs params, metrics, figures, and model artifacts (with input example).
+"""
 
-
-# Imports and basic setup
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -21,28 +24,101 @@ from sklearn.metrics import (
     mean_absolute_error, mean_squared_error
 )
 
-# Reproducibility: every split/model uses the same seed
-random_seed = 42
-np.random.seed(random_seed)
+# minimal MLflow
+import mlflow
+import mlflow.sklearn
 
+# -----------------------------
+# Load data
+# -----------------------------
+np.random.seed(42)
 
-# Small helpers to keep code tidy
-def metric_table(rows, columns):
-    """Pretty convenience for building printed tables."""
-    return pd.DataFrame(rows, columns=columns)
+red_df = pd.read_csv("data/wine+quality/winequality-red.csv", sep=";")
+white_df = pd.read_csv("data/wine+quality/winequality-white.csv", sep=";")
 
-def standard_preprocessor(numeric_features):
-    """
-    Wrap a StandardScaler in a ColumnTransformer so we can reference
-    columns by NAME (requires DataFrame inputs, not numpy arrays).
-    """
-    return ColumnTransformer(
-        transformers=[("scale", StandardScaler(), numeric_features)],
-        remainder="drop"
-    )
+df = pd.concat([red_df.assign(type="red"), white_df.assign(type="white")],
+               ignore_index=True).drop_duplicates()
 
-def cls_metrics(model, Xv, yv, Xte, yte):
-    """Classification metrics we actually care about: Accuracy + F1 on val/test."""
+# numeric coercion, drop missing, simple dtypes
+for c in df.columns:
+    if c != "type":
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+df = df.dropna().reset_index(drop=True)
+df["quality"] = df["quality"].astype(int)
+df["type"] = df["type"].astype("category")
+
+# binary label for classification
+df["target_cls"] = (df["quality"] >= 7).astype(int)
+
+# features (exclude labels/helper columns)
+features = [c for c in df.columns if c not in ["quality", "target_cls", "type"]]
+X = df[features].astype("float64")  # FIX: use floats so MLflow schema is stable
+y_cls = df["target_cls"].values
+y_reg = df["quality"].values
+
+# -----------------------------
+# Split: train / val / test
+# -----------------------------
+X_tr, X_te, y_cls_tr, y_cls_te, y_reg_tr, y_reg_te = train_test_split(
+    X, y_cls, y_reg, test_size=0.20, random_state=42, stratify=y_cls
+)
+
+X_tr, X_va, y_cls_tr, y_cls_va, y_reg_tr, y_reg_va = train_test_split(
+    X_tr, y_cls_tr, y_reg_tr, test_size=0.25, random_state=42, stratify=y_cls_tr
+)
+
+# scaler in a simple ColumnTransformer
+scaler = ColumnTransformer([("scale", StandardScaler(), features)], remainder="drop")
+
+# -----------------------------
+# Plot 1: target distribution
+# -----------------------------
+plt.figure()
+pd.Series(y_cls).value_counts().sort_index().plot(kind="bar")
+plt.title("Plot 1 — Target Distribution (0=Low, 1=High)")
+plt.xlabel("Class")
+plt.ylabel("Count")
+plt.tight_layout()
+plt.savefig("plot1_target_distribution.png", dpi=200, bbox_inches="tight")
+plt.show()
+
+# -----------------------------
+# Plot 2: correlation matrix (class-style)
+# -----------------------------
+num_df = df[features + ["quality"]].select_dtypes(include=[np.number])
+corr = num_df.corr(numeric_only=True)
+
+plt.figure()
+plt.matshow(corr, fignum=False)          # simple matrix view, default style
+plt.xticks(range(len(corr.columns)), corr.columns, rotation=90)
+plt.yticks(range(len(corr.index)), corr.index)
+plt.title("Plot 2 — Correlation Matrix")
+plt.tight_layout()
+plt.savefig("plot2_correlation_matrix.png")
+plt.show()
+
+# -----------------------------
+# Baselines (no tuning)
+# -----------------------------
+# classification
+logit = Pipeline([("prep", scaler), ("clf", LogisticRegression(max_iter=200, random_state=42))])
+logit.fit(X_tr, y_cls_tr)
+
+tree_cls = Pipeline([("prep", "passthrough"), ("clf", DecisionTreeClassifier(random_state=42))])
+tree_cls.fit(X_tr, y_cls_tr)
+
+# regression
+linreg = Pipeline([("prep", scaler), ("reg", LinearRegression())])
+linreg.fit(X_tr, y_reg_tr)
+
+tree_reg = Pipeline([("prep", "passthrough"), ("reg", DecisionTreeRegressor(random_state=42))])
+tree_reg.fit(X_tr, y_reg_tr)
+
+# -----------------------------
+# Tables: metrics on val + test
+# -----------------------------
+def cls_eval(model, Xv, yv, Xte, yte):
     pv = model.predict(Xv)
     pt = model.predict(Xte)
     return {
@@ -52,8 +128,7 @@ def cls_metrics(model, Xv, yv, Xte, yte):
         "test_f1": f1_score(yte, pt, zero_division=0),
     }
 
-def reg_metrics(model, Xv, yv, Xte, yte):
-    """Regression metrics: MAE + RMSE on val/test."""
+def reg_eval(model, Xv, yv, Xte, yte):
     pv = model.predict(Xv)
     pt = model.predict(Xte)
     return {
@@ -63,172 +138,113 @@ def reg_metrics(model, Xv, yv, Xte, yte):
         "test_rmse": float(np.sqrt(mean_squared_error(yte, pt))),
     }
 
+m_logit = cls_eval(logit, X_va, y_cls_va, X_te, y_cls_te)
+m_treec = cls_eval(tree_cls, X_va, y_cls_va, X_te, y_cls_te)
 
-# Load + clean the dataset
-red_df = pd.read_csv("wine+quality/winequality-red.csv", sep=";")
-red_df["type"] = "red"
+m_linr = reg_eval(linreg, X_va, y_reg_va, X_te, y_reg_te)
+m_treer = reg_eval(tree_reg, X_va, y_reg_va, X_te, y_reg_te)
 
-white_df = pd.read_csv("wine+quality/winequality-white.csv", sep=";")
-white_df["type"] = "white"
+table_cls = pd.DataFrame([
+    ["LogisticRegression", m_logit["val_accuracy"], m_logit["val_f1"], m_logit["test_accuracy"], m_logit["test_f1"]],
+    ["DecisionTreeClassifier", m_treec["val_accuracy"], m_treec["val_f1"], m_treec["test_accuracy"], m_treec["test_f1"]],
+], columns=["Model", "Val_Accuracy", "Val_F1", "Test_Accuracy", "Test_F1"])
 
-# Combine, de-dup, coerce numerics, drop rows with missing values
-df = pd.concat([red_df, white_df], ignore_index=True).drop_duplicates()
-for c in df.columns:
-    if c != "type":
-        df[c] = pd.to_numeric(df[c], errors="coerce")
-df["quality"] = df["quality"].astype(int)
-df["type"] = df["type"].astype("category")
-df = df.dropna().reset_index(drop=True)
+table_reg = pd.DataFrame([
+    ["LinearRegression", m_linr["val_mae"], m_linr["val_rmse"], m_linr["test_mae"], m_linr["test_rmse"]],
+    ["DecisionTreeRegressor", m_treer["val_mae"], m_treer["val_rmse"], m_treer["test_mae"], m_treer["test_rmse"]],
+], columns=["Model", "Val_MAE", "Val_RMSE", "Test_MAE", "Test_RMSE"])
 
-# Binary target for the classification task: 1 = “good” wine (>=7)
-df["target_cls"] = (df["quality"] >= 7).astype(int)
-
-# All numeric feature columns (exclude label + helper columns)
-numeric_features = [c for c in df.columns if c not in ["quality", "target_cls", "type"]]
-
-
-# Split: train/val/test using the rubric
-# Keep X as a DataFrame (so transformers can use column names)
-X = df[numeric_features]
-y_cls = df["target_cls"].values
-y_reg = df["quality"].values
-
-# First split out the test set (20%); stratify on the class label
-X_train, X_test, y_cls_train, y_cls_test, y_reg_train, y_reg_test = train_test_split(
-    X, y_cls, y_reg, test_size=0.20, random_state=random_seed, stratify=y_cls
-)
-
-# Then carve out a validation set (25% of remaining = 20% overall)
-X_train, X_val, y_cls_train, y_cls_val, y_reg_train, y_reg_val = train_test_split(
-    X_train, y_cls_train, y_reg_train, test_size=0.25, random_state=random_seed, stratify=y_cls_train
-)
-
-
-#EDA — exactly two plots
-# Plot 1: class balance (bar chart). Imbalance matters for F1 vs Accuracy.
-plt.figure()
-pd.Series(y_cls).value_counts().sort_index().plot(kind="bar")
-plt.title("Plot 1 — Target Distribution (0=Low, 1=High)")
-plt.xlabel("Class")
-plt.ylabel("Count")
-plt.tight_layout()
-plt.show()
-
-# Plot 2: correlation structure among features (+ quality).
-# Gives a quick sense of which features drive quality (e.g., alcohol).
-num_df = df[numeric_features + ["quality"]].select_dtypes(include=[np.number]).copy()
-
-corr_df = num_df.corr(numeric_only=True)
-
-# Drop rows/cols that are all NaN (can happen if a column is constant or non-numeric slipped in)
-corr_df = corr_df.dropna(how="all", axis=0).dropna(how="all", axis=1)
-
-if corr_df.shape[0] >= 2 and corr_df.shape[1] >= 2 and not np.isnan(corr_df.values).all():
-    # Heatmap path
-    plt.figure()
-    mat = corr_df.values  # ensure numeric array for imshow
-    plt.imshow(mat, vmin=-1, vmax=1)  # fix color scale for visibility
-    plt.colorbar()
-    plt.xticks(range(len(corr_df.columns)), corr_df.columns, rotation=90)
-    plt.yticks(range(len(corr_df.index)), corr_df.index)
-    plt.title("Plot 2 — Correlation Heatmap (Numeric + Quality)")
-    plt.tight_layout()
-    plt.show()
-else:
-    # Fallback: concise boxplot of the numeric features
-    plt.figure()
-    num_df.drop(columns=["quality"], errors="ignore").plot(kind="box", rot=90)
-    plt.title("Plot 2 — Boxplot Summary (Fallback)")
-    plt.tight_layout()
-    plt.show()
-
-
-
-#Baselines — classical models, no heroics
-# Classification baselines:
-# - Logistic Regression with scaling (sane default for tabular)
-# - Decision Tree without scaling (trees don’t need it)
-cls_logit = Pipeline([
-    ("prep", standard_preprocessor(numeric_features)),
-    ("clf", LogisticRegression(max_iter=200, random_state=random_seed))
-])
-cls_logit.fit(X_train, y_cls_train)
-m_logit = cls_metrics(cls_logit, X_val, y_cls_val, X_test, y_cls_test)
-
-cls_tree = Pipeline([
-    ("prep", "passthrough"),
-    ("clf", DecisionTreeClassifier(random_state=random_seed))
-])
-cls_tree.fit(X_train, y_cls_train)
-m_tree = cls_metrics(cls_tree, X_val, y_cls_val, X_test, y_cls_test)
-
-# Regression baselines:
-# - Linear Regression with scaling (keeps coefficients honest)
-# - Decision Tree Regressor (handles nonlinearity, risk of overfit)
-reg_lin = Pipeline([
-    ("prep", standard_preprocessor(numeric_features)),
-    ("reg", LinearRegression())
-])
-reg_lin.fit(X_train, y_reg_train)
-m_lin = reg_metrics(reg_lin, X_val, y_reg_val, X_test, y_reg_test)
-
-reg_tree = Pipeline([
-    ("prep", "passthrough"),
-    ("reg", DecisionTreeRegressor(random_state=random_seed))
-])
-reg_tree.fit(X_train, y_reg_train)
-m_rtree = reg_metrics(reg_tree, X_val, y_reg_val, X_test, y_reg_test)
-
-# Print the two required tables directly to console
-table1 = metric_table(
-    rows=[
-        ["LogisticRegression", m_logit["val_accuracy"], m_logit["val_f1"], m_logit["test_accuracy"], m_logit["test_f1"]],
-        ["DecisionTreeClassifier", m_tree["val_accuracy"], m_tree["val_f1"], m_tree["test_accuracy"], m_tree["test_f1"]],
-    ],
-    columns=["Model", "Val_Accuracy", "Val_F1", "Test_Accuracy", "Test_F1"]
-)
 print("\n=== Table 1 — Classification metrics (Val/Test) ===")
-print(table1.to_string(index=False))
-
-table2 = metric_table(
-    rows=[
-        ["LinearRegression", m_lin["val_mae"], m_lin["val_rmse"], m_lin["test_mae"], m_lin["test_rmse"]],
-        ["DecisionTreeRegressor", m_rtree["val_mae"], m_rtree["val_rmse"], m_rtree["test_mae"], m_rtree["test_rmse"]],
-    ],
-    columns=["Model", "Val_MAE", "Val_RMSE", "Test_MAE", "Test_RMSE"]
-)
+print(table_cls.to_string(index=False))
 print("\n=== Table 2 — Regression metrics (Val/Test) ===")
-print(table2.to_string(index=False))
+print(table_reg.to_string(index=False))
 
-# Plot 3 — Confusion matrix (best classifier by Val F1) on the test set
-if m_logit["val_f1"] >= m_tree["val_f1"]:
-    best_cls_model, best_cls_name = cls_logit, "LogisticRegression"
-else:
-    best_cls_model, best_cls_name = cls_tree, "DecisionTreeClassifier"
+table_cls.to_csv("table1_classification_metrics.csv", index=False)
+table_reg.to_csv("table2_regression_metrics.csv", index=False)
 
-y_pred_test_cls = best_cls_model.predict(X_test)
-cm = confusion_matrix(y_cls_test, y_pred_test_cls, labels=[0, 1])
+# -----------------------------
+# Plot 3: confusion matrix (class-style, no colorbar)
+# -----------------------------
+best_cls_model = logit if m_logit["val_f1"] >= m_treec["val_f1"] else tree_cls
+best_cls_name = "LogisticRegression" if best_cls_model is logit else "DecisionTreeClassifier"
 
-fig, ax = plt.subplots()
+y_pred_cls_test = best_cls_model.predict(X_te)
+cm = confusion_matrix(y_cls_te, y_pred_cls_test, labels=[0, 1])
+
 disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[0, 1])
-disp.plot(values_format='d', ax=ax, colorbar=True)
-ax.set_title(f"Plot 3 — Confusion Matrix (Test) — {best_cls_name}")
+disp.plot()                                # defaults (no colorbar, simple look)
+plt.title(f"Plot 3 — Confusion Matrix (Test) — {best_cls_name}")
 plt.tight_layout()
+plt.savefig("plot3_confusion_matrix.png")
 plt.show()
 
-# Best regressor by Val RMSE → residuals vs predicted on the test set
-if m_lin["val_rmse"] <= m_rtree["val_rmse"]:
-    best_reg_model, best_reg_name = reg_lin, "LinearRegression"
-else:
-    best_reg_model, best_reg_name = reg_tree, "DecisionTreeRegressor"
+# -----------------------------
+# Plot 4: residuals vs predicted (best reg by Val RMSE)
+# -----------------------------
+best_reg_model = linreg if m_linr["val_rmse"] <= m_treer["val_rmse"] else tree_reg
+best_reg_name = "LinearRegression" if best_reg_model is linreg else "DecisionTreeRegressor"
 
-y_pred_test_reg = best_reg_model.predict(X_test)
-residuals = y_reg_test - y_pred_test_reg
+y_pred_reg_test = best_reg_model.predict(X_te)
+residuals = y_reg_te - y_pred_reg_test
+
 plt.figure()
-plt.scatter(y_pred_test_reg, residuals, alpha=0.7)
+plt.scatter(y_pred_reg_test, residuals, alpha=0.7)
 plt.axhline(0, linestyle="--")
 plt.xlabel("Predicted Quality (Test)")
 plt.ylabel("Residuals (y - y_pred)")
 plt.title(f"Plot 4 — Residuals vs Predicted (Test) — {best_reg_name}")
 plt.tight_layout()
+plt.savefig("plot4_residuals.png", dpi=200, bbox_inches="tight")
 plt.show()
+
+# -----------------------------
+# Minimal MLflow logging (one run per baseline)
+# -----------------------------
+EXAMPLE_X = X_tr.head(5).astype("float64")  # FIX: small float sample for signature inference
+mlflow.set_experiment("wine-quality-midpoint")
+
+common = {
+    "seed": 42,
+    "test_pct": 0.20,
+    "val_pct_of_train": 0.25,
+    "n_features": len(features),
+    "stratify_on": "target_cls",
+}
+
+# classification runs
+with mlflow.start_run(run_name="CLS - LogisticRegression"):
+    mlflow.log_params(common)
+    mlflow.log_param("model", "LogisticRegression")
+    mlflow.log_metrics(m_logit)
+    mlflow.log_artifact("plot1_target_distribution.png")
+    mlflow.log_artifact("plot2_correlation_matrix.png")  # FIX: match saved filename
+    mlflow.log_artifact("plot3_confusion_matrix.png")
+    mlflow.log_artifact("table1_classification_metrics.csv")
+    mlflow.sklearn.log_model(logit, name="model", input_example=EXAMPLE_X)  # FIX: name= + input_example
+
+with mlflow.start_run(run_name="CLS - DecisionTreeClassifier"):
+    mlflow.log_params(common)
+    mlflow.log_param("model", "DecisionTreeClassifier")
+    mlflow.log_metrics(m_treec)
+    mlflow.log_artifact("plot1_target_distribution.png")
+    mlflow.log_artifact("plot2_correlation_matrix.png")  # FIX: match saved filename
+    mlflow.log_artifact("plot3_confusion_matrix.png")
+    mlflow.log_artifact("table1_classification_metrics.csv")
+    mlflow.sklearn.log_model(tree_cls, name="model", input_example=EXAMPLE_X)  # FIX
+
+# regression runs
+with mlflow.start_run(run_name="REG - LinearRegression"):
+    mlflow.log_params(common)
+    mlflow.log_param("model", "LinearRegression")
+    mlflow.log_metrics(m_linr)
+    mlflow.log_artifact("plot4_residuals.png")
+    mlflow.log_artifact("table2_regression_metrics.csv")
+    mlflow.sklearn.log_model(linreg, name="model", input_example=EXAMPLE_X)  # FIX
+
+with mlflow.start_run(run_name="REG - DecisionTreeRegressor"):
+    mlflow.log_params(common)
+    mlflow.log_param("model", "DecisionTreeRegressor")
+    mlflow.log_metrics(m_treer)
+    mlflow.log_artifact("plot4_residuals.png")
+    mlflow.log_artifact("table2_regression_metrics.csv")
+    mlflow.sklearn.log_model(tree_reg, name="model", input_example=EXAMPLE_X)  # FIX
