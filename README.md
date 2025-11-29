@@ -7,7 +7,7 @@ Machine learning project using the UCI Wine Quality dataset to predict wine qual
 
 ---
 
-## 📁 Repository Structure
+##   Repository Structure
 
 ```text
 data/               # Dataset folder (wine quality CSVs + data README)
@@ -20,13 +20,15 @@ requirements.txt    # Pinned package versions for reproducibility
 README.md           # Setup and run instructions
 LICENSE
 .gitignore
+```
+---
 
-
-## ⚙️ Installation & Setup
+##   Installation & Setup
 
 To reproduce this project:
-Ensure Python is installed on your system.
-(Optional) Create and activate a virtual environment.
+- Ensure Python is installed on your system.
+- Create and activate a virtual environment (this is optional).
+  
 Install the required packages:
 		pip install -r requirements.txt
 
@@ -38,7 +40,7 @@ matplotlib
 mlflow
 These versions match the development environment, ensuring reproducibility.
 
-
+---
 
 ##   Running the Project
 
@@ -55,7 +57,7 @@ This script performs:
 - Evaluating model performance (accuracy, F1-score, RMSE, etc.)
 - Logging parameters, metrics, and artifacts to MLflow
 
-
+---
 
 ##   MLflow Experiment Tracking
 
@@ -72,7 +74,7 @@ To launch the MLflow UI:
 
 Then open the URL printed in the terminal to inspect and compare runs.
 
-
+---
 
 ##   Reports
 
