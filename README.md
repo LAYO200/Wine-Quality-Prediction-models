@@ -8,26 +8,27 @@ Machine learning project using the UCI Wine Quality dataset to predict wine qual
 ---
 
 ##   Repository Structure
-
+```text
 data/                       # Dataset folder (winequality-red.csv, winequality-white.csv + data README)
-    wine+quality/
+  └─ wine+quality/
 mlruns/                     # MLflow experiment tracking directory (auto-created by MLflow)
 models/                     # Saved trained models (optional, added during experimentation)
 notebooks/                  # Optional Jupyter notebooks for EDA
 reports/                    # Proposal, midpoint report, final report
 src/                        # All training, preprocessing, and evaluation scripts
-   data.py                # Data loading, cleaning, and train/val/test splitting
-   utils.py               # Config constants, paths, and evaluation helpers
-   features.py            # Preprocessing pipelines & feature engineering
-   evaluate.py            # Plotting and final table generation
-   train_baselines.py     # Classical baseline models + MLflow logging
-   train_nn.py            # Classical + NN models + final report artefacts and MLflow logging
+  ├─ data.py                # Data loading, cleaning, and train/val/test splitting
+  ├─ utils.py               # Config constants, paths, and evaluation helpers
+  ├─ features.py            # Preprocessing pipelines & feature engineering
+  ├─ evaluate.py            # Plotting and final table generation
+  ├─ train_baselines.py     # Classical baseline models + MLflow logging
+  └─ train_nn.py            # Classical + NN models + final report artefacts and MLflow logging
 outputs/                    # Generated plots, tables, and other artefacts (created by scripts)
 requirements.txt            # Pinned package versions for reproducibility
 README.md                   # Setup and run instructions
 LICENSE
 .gitignore
 
+```
 ---
 
 ##   Installation & Setup
