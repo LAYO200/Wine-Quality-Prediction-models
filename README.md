@@ -1,8 +1,8 @@
-# Wine-Quality-Prediction-Models
+
 
 Machine learning project using the UCI Wine Quality dataset to predict wine quality scores through classification and regression models.
 
-**Course:** CS 4120 – Machine Learning, Data Mining  
+**Course:**   Machine Learning, Data Mining  
 **Authors:** Chizurum Ewelike & 'Tomilayo Faloseyi  
 
 ---
